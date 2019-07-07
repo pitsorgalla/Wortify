@@ -5,7 +5,7 @@ import Html exposing (Html, button, div, h1, h3, h4, pre, section, text)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick)
 import Http exposing (..)
-import Json.Decode exposing (Decoder, andThen, at, field, index, int, list, map, map2, map3, string, succeed)
+import Json.Decode exposing (Decoder, andThen, at, field, index, int, list, map, map2, map4, string, succeed)
 import SelectableText exposing (defaultOptions)
 import Task
 
@@ -31,13 +31,13 @@ type Model
     = Failure Http.Error
     | Loading
     | Success Article
-    | Show String
 
 
 type alias Article =
     { title : String
     , text : String
     , displayModel : SelectableText.Model
+    , definitionText : Maybe String
     }
 
 
@@ -52,9 +52,8 @@ type Msg
     | GotText (Result Http.Error Article)
     | GotUrl (Result Http.Error UrlLog)
     | SelectableTextMessage SelectableText.Msg
-    | FinishedSelectingText Article String
     | RefreshSite
-    | GotDefinition (Result Http.Error String)
+    | GotDefinition (Result Http.Error String) Article
     | GetDefinition String Article
 
 
@@ -79,12 +78,7 @@ api apiString =
 
 
 
-{-
-   "https://en.wikipedia.org/w/api.php?format=json&action=query&prop=extracts&exlimit=max&explaintext&exintro&titles=German_battleship_Tirpitz&redirects=1&origin=*"
-   "https://api.coindesk.com/v1/bpi/currentprice.json"
-   "https://en.wikipedia.org/api/rest_v1/page/summary/Stack_Overflow"
--}
--- Wiki Rest API um zufälligen Title (bzw den Namen) zu laden
+-- WikiRest API um zufälligen Title (bzw den Namen) zu laden
 
 
 api2 : String
@@ -98,6 +92,10 @@ getApiString =
         { url = api2
         , expect = Http.expectJson GotUrl randomDecoder
         }
+
+
+
+-- Decoder der Apis
 
 
 randomDecoder : Decoder UrlLog
@@ -117,6 +115,10 @@ ranPageDecoder =
     field "items" (index 0 (field "page_id" int))
 
 
+
+-- INIT
+
+
 init : () -> ( Model, Cmd Msg )
 init _ =
     ( Loading
@@ -127,12 +129,20 @@ init _ =
     )
 
 
+
+-- neue Seite laden
+
+
 refresh : Cmd Msg
 refresh =
     Http.get
         { url = api2
         , expect = Http.expectJson GotUrl randomDecoder
         }
+
+
+
+-- ruft random WikiAPI auf
 
 
 callWikiApi : String -> Int -> Cmd Msg
@@ -143,12 +153,18 @@ callWikiApi apiString pageNr =
         }
 
 
+
+-- Decoder von Article
+-- um Json zu verarbeiten
+
+
 articleDecoder : Int -> Decoder Article
 articleDecoder pageNr =
-    map3 Article
+    map4 Article
         (titleDecoder (String.fromInt pageNr))
         (textDecoder (String.fromInt pageNr))
         (displayModelDecoder (String.fromInt pageNr))
+        (succeed Nothing)
 
 
 titleDecoder : String -> Decoder String
@@ -175,8 +191,7 @@ displayModelDecoder pageNr =
 
 
 
--- field "query" (field "pages" (field "31124517" (field "title" string)))
--- UPDATE
+-- message wandelt msg in cmd um
 
 
 message : Msg -> Cmd Msg
@@ -184,12 +199,18 @@ message msg =
     Task.perform identity (Task.succeed msg)
 
 
+
+-- UPDATE
+
+
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
+        -- macht nichts
         NoOp ->
             ( model, Cmd.none )
 
+        -- Article geladen
         GotText result ->
             case result of
                 Ok article ->
@@ -205,6 +226,7 @@ update msg model =
                 Err e ->
                     ( Failure e, Cmd.none )
 
+        -- ruft APIs auf
         GotUrl result ->
             case result of
                 Ok fullUrl ->
@@ -213,9 +235,12 @@ update msg model =
                 Err e ->
                     ( Failure e, Cmd.none )
 
+        -- neuen Article laden
         RefreshSite ->
             ( Loading, refresh )
 
+        -- Rueckgabe zu SelectableText um markieren des Textes zu speichern
+        -- DisplayModel wird aktualisiert
         SelectableTextMessage subMsg ->
             case model of
                 Success article ->
@@ -224,26 +249,39 @@ update msg model =
                             SelectableText.update subMsg article.displayModel
 
                         newArticle =
-                            { article | displayModel = newDisplayModel }
+                            { article | displayModel = newDisplayModel, definitionText = Nothing }
+
+                        command =
+                            --case newDisplayModel.selectedPhrase of
+                            --    Just selectedPhrase ->
+                            --        callWordApi selectedPhrase newArticle
+                            --    Nothing ->
+                            Cmd.none
                     in
-                    ( Success newArticle, Cmd.none )
+                    ( Success newArticle, command )
 
                 _ ->
                     ( model, Cmd.none )
 
-        FinishedSelectingText article selectedText ->
-            ( Success article, Cmd.none )
-
+        -- Aufruf wenn Definition gesucht
         GetDefinition selected article ->
-            ( Success article, callWordApi selected )
+            ( Success article, callWordApi selected article )
 
-        GotDefinition result ->
-            case result of
-                Ok fullDef ->
-                    ( Show fullDef, Cmd.none )
+        -- liefert DEfinition zurueck
+        GotDefinition definition article ->
+            let
+                definitionText =
+                    case definition of
+                        Ok fullDef ->
+                            Just fullDef
 
-                Err e ->
-                    ( Failure e, Cmd.none )
+                        Err e ->
+                            Just "error"
+
+                newArticle =
+                    { article | definitionText = definitionText }
+            in
+            ( Success newArticle, Cmd.none )
 
 
 
@@ -272,29 +310,42 @@ view model =
                     [ div [ class "hero-body" ]
                         [ div [ class "container" ]
                             [ h3 [ class "title" ]
-                                [ text "loading title..." ]
+                                [ text "loading title.." ]
                             , div [ class "content" ]
-                                [ --div [ class "button is-info is-rounded" ]
-                                  --  [ text "info" ]
-                                  --, text " "
-                                  div [ class "button is-white" ]
-                                    [ text "nothing selected" ]
+                                [ div []
+                                    [ text "nothing selected"
+                                    ]
+                                ]
+                            , div [ class "content" ]
+                                [ button [ class "button is-info" ]
+                                    [ text "Load Definition" ]
                                 ]
                             , div [ class "box" ]
-                                [ text "loading content..." ]
+                                [ text "loading text.." ]
                             ]
                         ]
                     ]
                 ]
 
+        -- erfolgreich Article geladen
         Success article ->
             let
+                -- markierter Text
                 selectedText =
                     Maybe.withDefault "nothing selected" article.displayModel.selectedPhrase
 
+                -- Edfinition des markierten Textes
+                definitionText =
+                    case article.definitionText of
+                        Just definition ->
+                            " - " ++ definition
+
+                        Nothing ->
+                            ""
+
+                -- Article als Html
                 textView =
                     SelectableText.view article.displayModel
-                        |> Debug.log (Debug.toString article)
                         |> Html.map SelectableTextMessage
             in
             div []
@@ -305,69 +356,35 @@ view model =
                             [ h3 [ class "title" ]
                                 [ text article.title ]
                             , div [ class "content" ]
-                                [ -- button [ class "button is-info is-rounded", onClick (GetDefinition selectedText article) ]
-                                  --    [ text "show defnition of" ]
-                                  --, text " "
-                                  button [ class "button is-white", onClick (GetDefinition selectedText article) ]
-                                    [ text selectedText ]
+                                [ div []
+                                    [ text (selectedText ++ definitionText)
+                                    ]
+                                ]
+                            , div [ class "content" ]
+                                [ button [ class "button is-info", onClick (GetDefinition selectedText article) ]
+                                    [ text "Load Definition" ]
                                 ]
                             , div [ class "box" ]
                                 [ textView ]
-
-                            {-
-                               , div [class "box" ]
-                                   [ viewDefinition selectedText ]
-                            -}
                             ]
                         ]
                     ]
                 ]
 
-        Show definition ->
-            text definition
 
 
-
-{-
-   viewDefinition : String -> Html Msg
-   viewDefinition word =
+-- alles fuer Definitions API
+-- API call
 
 
-
-   updateDef : Msg -> Model -> ( Model, Cmd Msg )
-   updateDef msg model =
-       case msg of
-           NoDef ->
-               ( model, Cmd.none )
-
-           GotDef result ->
-               case result of
-                   Ok fullDefinition ->
-                       ( Success fullDefinition, Cmd.none )
-
-                   Err e ->
-                       ( Failure e, Cmd.none )
--}
-
-
-definitionDecoder : Decoder String
-definitionDecoder =
-    field "definitions" (index 0 (field "definition" string))
-
-
-api3 : String -> String
-api3 input =
-    "https://wordsapiv1.p.rapidapi.com/words/" ++ input ++ "/definitions"
-
-
-callWordApi : String -> Cmd Msg
-callWordApi input =
+callWordApi : String -> Article -> Cmd Msg
+callWordApi input article =
     Http.request
         { method = "GET"
         , headers = headers3
         , url = api3 input
         , body = Http.emptyBody
-        , expect = Http.expectJson GotDefinition definitionDecoder
+        , expect = Http.expectJson (createGotDefinition article) definitionDecoder
         , timeout = Nothing
         , tracker = Nothing
         }
@@ -381,7 +398,34 @@ headers3 =
 
 
 
--- pretty header
+-- DefinitionsAPI
+
+
+api3 : String -> String
+api3 input =
+    "https://wordsapiv1.p.rapidapi.com/words/" ++ input ++ "/definitions"
+
+
+
+-- flip GotDefinition
+
+
+createGotDefinition : Article -> Result Http.Error String -> Msg
+createGotDefinition article httpResult =
+    GotDefinition httpResult article
+
+
+
+-- Decoder
+
+
+definitionDecoder : Decoder String
+definitionDecoder =
+    field "definitions" (index 0 (field "definition" string))
+
+
+
+-- header
 
 
 applicationHeader : Html Msg

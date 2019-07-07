@@ -5991,9 +5991,6 @@ var author$project$Main$Failure = function (a) {
 var author$project$Main$SelectableTextMessage = function (a) {
 	return {$: 'SelectableTextMessage', a: a};
 };
-var author$project$Main$Show = function (a) {
-	return {$: 'Show', a: a};
-};
 var author$project$Main$Success = function (a) {
 	return {$: 'Success', a: a};
 };
@@ -6003,9 +6000,9 @@ var author$project$Main$GotText = function (a) {
 var author$project$Main$api = function (apiString) {
 	return 'https://en.wikipedia.org/w/api.php?format=json&action=query&prop=extracts&exlimit=max&explaintext&exintro&titles=' + (apiString + '&redirects=1&origin=*');
 };
-var author$project$Main$Article = F3(
-	function (title, text, displayModel) {
-		return {displayModel: displayModel, text: text, title: title};
+var author$project$Main$Article = F4(
+	function (title, text, displayModel, definitionText) {
+		return {definitionText: definitionText, displayModel: displayModel, text: text, title: title};
 	});
 var author$project$SelectableText$defaultOptions = {allowInterparagraphSelection: true, id: 'text', maxSelectionLength: elm$core$Maybe$Nothing, placeholderText: '', selectedElementClass: 'selected'};
 var author$project$SelectableText$Word = function (a) {
@@ -6067,17 +6064,19 @@ var author$project$Main$titleDecoder = function (pageNr) {
 			['query', 'pages', pageNr, 'title']),
 		elm$json$Json$Decode$string);
 };
-var elm$json$Json$Decode$map3 = _Json_map3;
+var elm$json$Json$Decode$map4 = _Json_map4;
+var elm$json$Json$Decode$succeed = _Json_succeed;
 var author$project$Main$articleDecoder = function (pageNr) {
-	return A4(
-		elm$json$Json$Decode$map3,
+	return A5(
+		elm$json$Json$Decode$map4,
 		author$project$Main$Article,
 		author$project$Main$titleDecoder(
 			elm$core$String$fromInt(pageNr)),
 		author$project$Main$textDecoder(
 			elm$core$String$fromInt(pageNr)),
 		author$project$Main$displayModelDecoder(
-			elm$core$String$fromInt(pageNr)));
+			elm$core$String$fromInt(pageNr)),
+		elm$json$Json$Decode$succeed(elm$core$Maybe$Nothing));
 };
 var author$project$Main$callWikiApi = F2(
 	function (apiString, pageNr) {
@@ -6090,12 +6089,17 @@ var author$project$Main$callWikiApi = F2(
 				url: author$project$Main$api(apiString)
 			});
 	});
-var author$project$Main$GotDefinition = function (a) {
-	return {$: 'GotDefinition', a: a};
-};
 var author$project$Main$api3 = function (input) {
 	return 'https://wordsapiv1.p.rapidapi.com/words/' + (input + '/definitions');
 };
+var author$project$Main$GotDefinition = F2(
+	function (a, b) {
+		return {$: 'GotDefinition', a: a, b: b};
+	});
+var author$project$Main$createGotDefinition = F2(
+	function (article, httpResult) {
+		return A2(author$project$Main$GotDefinition, httpResult, article);
+	});
 var author$project$Main$definitionDecoder = A2(
 	elm$json$Json$Decode$field,
 	'definitions',
@@ -6113,18 +6117,22 @@ var author$project$Main$headers3 = _List_fromArray(
 		A2(elm$http$Http$header, 'X-RapidAPI-Host', 'wordsapiv1.p.rapidapi.com'),
 		A2(elm$http$Http$header, 'X-RapidAPI-Key', '820b1c05d6msh6ce2ee05c73291fp132ba2jsn72892ae44c16')
 	]);
-var author$project$Main$callWordApi = function (input) {
-	return elm$http$Http$request(
-		{
-			body: elm$http$Http$emptyBody,
-			expect: A2(elm$http$Http$expectJson, author$project$Main$GotDefinition, author$project$Main$definitionDecoder),
-			headers: author$project$Main$headers3,
-			method: 'GET',
-			timeout: elm$core$Maybe$Nothing,
-			tracker: elm$core$Maybe$Nothing,
-			url: author$project$Main$api3(input)
-		});
-};
+var author$project$Main$callWordApi = F2(
+	function (input, article) {
+		return elm$http$Http$request(
+			{
+				body: elm$http$Http$emptyBody,
+				expect: A2(
+					elm$http$Http$expectJson,
+					author$project$Main$createGotDefinition(article),
+					author$project$Main$definitionDecoder),
+				headers: author$project$Main$headers3,
+				method: 'GET',
+				timeout: elm$core$Maybe$Nothing,
+				tracker: elm$core$Maybe$Nothing,
+				url: author$project$Main$api3(input)
+			});
+	});
 var elm$core$Task$Perform = function (a) {
 	return {$: 'Perform', a: a};
 };
@@ -6604,38 +6612,38 @@ var author$project$Main$update = F2(
 					var newDisplayModel = A2(author$project$SelectableText$update, subMsg, article.displayModel);
 					var newArticle = _Utils_update(
 						article,
-						{displayModel: newDisplayModel});
+						{definitionText: elm$core$Maybe$Nothing, displayModel: newDisplayModel});
+					var command = elm$core$Platform$Cmd$none;
 					return _Utils_Tuple2(
 						author$project$Main$Success(newArticle),
-						elm$core$Platform$Cmd$none);
+						command);
 				} else {
 					return _Utils_Tuple2(model, elm$core$Platform$Cmd$none);
 				}
-			case 'FinishedSelectingText':
-				var article = msg.a;
-				var selectedText = msg.b;
-				return _Utils_Tuple2(
-					author$project$Main$Success(article),
-					elm$core$Platform$Cmd$none);
 			case 'GetDefinition':
 				var selected = msg.a;
 				var article = msg.b;
 				return _Utils_Tuple2(
 					author$project$Main$Success(article),
-					author$project$Main$callWordApi(selected));
+					A2(author$project$Main$callWordApi, selected, article));
 			default:
-				var result = msg.a;
-				if (result.$ === 'Ok') {
-					var fullDef = result.a;
-					return _Utils_Tuple2(
-						author$project$Main$Show(fullDef),
-						elm$core$Platform$Cmd$none);
-				} else {
-					var e = result.a;
-					return _Utils_Tuple2(
-						author$project$Main$Failure(e),
-						elm$core$Platform$Cmd$none);
-				}
+				var definition = msg.a;
+				var article = msg.b;
+				var definitionText = function () {
+					if (definition.$ === 'Ok') {
+						var fullDef = definition.a;
+						return elm$core$Maybe$Just(fullDef);
+					} else {
+						var e = definition.a;
+						return elm$core$Maybe$Just('error');
+					}
+				}();
+				var newArticle = _Utils_update(
+					article,
+					{definitionText: definitionText});
+				return _Utils_Tuple2(
+					author$project$Main$Success(newArticle),
+					elm$core$Platform$Cmd$none);
 		}
 	});
 var author$project$Main$GetDefinition = F2(
@@ -6645,7 +6653,6 @@ var author$project$Main$GetDefinition = F2(
 var author$project$Main$RefreshSite = {$: 'RefreshSite'};
 var author$project$Main$applicationSubTitle = 'Ein Projekt von Pit, Paul und Nina';
 var author$project$Main$applicationTitle = 'Wortify';
-var elm$json$Json$Decode$succeed = _Json_succeed;
 var elm$virtual_dom$VirtualDom$toHandlerInt = function (handler) {
 	switch (handler.$) {
 		case 'Normal':
@@ -6931,8 +6938,6 @@ var author$project$SelectableText$view = function (_n0) {
 			]),
 		paragraphs);
 };
-var elm$core$Debug$log = _Debug_log;
-var elm$core$Debug$toString = _Debug_toString;
 var elm$html$Html$h3 = _VirtualDom_node('h3');
 var elm$virtual_dom$VirtualDom$map = _VirtualDom_map;
 var elm$html$Html$map = elm$virtual_dom$VirtualDom$map;
@@ -6980,7 +6985,7 @@ var author$project$Main$view = function (model) {
 													]),
 												_List_fromArray(
 													[
-														elm$html$Html$text('loading title...')
+														elm$html$Html$text('loading title..')
 													])),
 												A2(
 												elm$html$Html$div,
@@ -6992,13 +6997,29 @@ var author$project$Main$view = function (model) {
 													[
 														A2(
 														elm$html$Html$div,
-														_List_fromArray(
-															[
-																elm$html$Html$Attributes$class('button is-white')
-															]),
+														_List_Nil,
 														_List_fromArray(
 															[
 																elm$html$Html$text('nothing selected')
+															]))
+													])),
+												A2(
+												elm$html$Html$div,
+												_List_fromArray(
+													[
+														elm$html$Html$Attributes$class('content')
+													]),
+												_List_fromArray(
+													[
+														A2(
+														elm$html$Html$button,
+														_List_fromArray(
+															[
+																elm$html$Html$Attributes$class('button is-info')
+															]),
+														_List_fromArray(
+															[
+																elm$html$Html$text('Load Definition')
 															]))
 													])),
 												A2(
@@ -7009,22 +7030,28 @@ var author$project$Main$view = function (model) {
 													]),
 												_List_fromArray(
 													[
-														elm$html$Html$text('loading content...')
+														elm$html$Html$text('loading text..')
 													]))
 											]))
 									]))
 							]))
 					]));
-		case 'Success':
+		default:
 			var article = model.a;
 			var textView = A2(
 				elm$html$Html$map,
 				author$project$Main$SelectableTextMessage,
-				A2(
-					elm$core$Debug$log,
-					elm$core$Debug$toString(article),
-					author$project$SelectableText$view(article.displayModel)));
+				author$project$SelectableText$view(article.displayModel));
 			var selectedText = A2(elm$core$Maybe$withDefault, 'nothing selected', article.displayModel.selectedPhrase);
+			var definitionText = function () {
+				var _n1 = article.definitionText;
+				if (_n1.$ === 'Just') {
+					var definition = _n1.a;
+					return ' - ' + definition;
+				} else {
+					return '';
+				}
+			}();
 			return A2(
 				elm$html$Html$div,
 				_List_Nil,
@@ -7074,16 +7101,33 @@ var author$project$Main$view = function (model) {
 												_List_fromArray(
 													[
 														A2(
+														elm$html$Html$div,
+														_List_Nil,
+														_List_fromArray(
+															[
+																elm$html$Html$text(
+																_Utils_ap(selectedText, definitionText))
+															]))
+													])),
+												A2(
+												elm$html$Html$div,
+												_List_fromArray(
+													[
+														elm$html$Html$Attributes$class('content')
+													]),
+												_List_fromArray(
+													[
+														A2(
 														elm$html$Html$button,
 														_List_fromArray(
 															[
-																elm$html$Html$Attributes$class('button is-white'),
+																elm$html$Html$Attributes$class('button is-info'),
 																elm$html$Html$Events$onClick(
 																A2(author$project$Main$GetDefinition, selectedText, article))
 															]),
 														_List_fromArray(
 															[
-																elm$html$Html$text(selectedText)
+																elm$html$Html$text('Load Definition')
 															]))
 													])),
 												A2(
@@ -7098,9 +7142,6 @@ var author$project$Main$view = function (model) {
 									]))
 							]))
 					]));
-		default:
-			var definition = model.a;
-			return elm$html$Html$text(definition);
 	}
 };
 var elm$browser$Browser$External = function (a) {
