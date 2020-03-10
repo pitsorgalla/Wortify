@@ -451,4 +451,4 @@ applicationTitle =
 
 applicationSubTitle : String.String
 applicationSubTitle =
-    "Ein Projekt von Pit, Paul und Nina"
+    "an university module project by Nina, Paul & Pit"
